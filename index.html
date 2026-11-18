@@ -1,8 +1,9 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" class="loading">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="icon" href="data:,">
 <title>Total Repair Services | Emergency Disaster Cleanup, Tree Removal &amp; Demolition in Florida</title>
 <meta name="description" content="Total Repair Services responds when disaster strikes. Emergency cleanup, tree removal and storm debris, demolition and site preparation across Florida.">
 <link rel="preload" href="fonts/anton-latin-400-normal.woff2" as="font" type="font/woff2" crossorigin>
@@ -25,6 +26,16 @@ h1,h2,h3,.display{font-family:Anton,"Bebas Neue",Impact,"Arial Narrow",sans-seri
 :focus-visible{outline:2px solid var(--accent);outline-offset:3px}
 .skip{position:absolute;left:-999px;top:8px;background:var(--accent);color:#151719;padding:10px 16px;z-index:200;font-weight:700}
 .skip:focus{left:8px}
+
+
+html.loading,html.loading body{overflow:hidden}
+#loader{position:fixed;inset:0;z-index:500;background:var(--bg);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:22px;transition:opacity .7s ease,visibility 0s .7s}
+#loader.done{opacity:0;visibility:hidden;pointer-events:none}
+#loader img{width:min(260px,60vw);height:auto}
+#loader .lbar{width:min(300px,70vw);height:2px;background:rgba(255,255,255,.16);position:relative;overflow:hidden}
+#loader .lbar i{position:absolute;left:0;top:0;bottom:0;width:0;background:var(--accent);transition:width .25s ease}
+#loader .lmeta{display:flex;gap:14px;font-size:.68rem;letter-spacing:.22em;text-transform:uppercase;color:var(--mute)}
+#loader .lmeta b{color:var(--text);font-weight:600;min-width:3ch;text-align:right}
 
 /* NAV */
 nav{position:fixed;inset:0 0 auto 0;z-index:100;display:flex;align-items:center;justify-content:space-between;padding:14px clamp(18px,4vw,56px);transition:background .35s,backdrop-filter .35s,padding .35s}
@@ -161,6 +172,7 @@ footer img{height:56px}
 </style>
 </head>
 <body>
+<div id="loader" role="status" aria-live="polite"><img src="img/logo.png" alt="Total Repair Services"><div class="lbar"><i id="lfill"></i></div><div class="lmeta"><span id="ltxt">Loading the experience</span><b id="lpct">0%</b></div></div>
 <a class="skip" href="#main">Skip to content</a>
 
 <nav id="nav" aria-label="Main">
@@ -323,12 +335,25 @@ footer img{height:56px}
 <script src="js/gsap.min.js"></script>
 <script src="js/ScrollTrigger.min.js"></script>
 <script src="js/lenis.min.js"></script>
+<script src="js/segments.js"></script>
 <script>
 (function(){
   document.getElementById('yr').textContent=new Date().getFullYear();
   var reduce=window.matchMedia('(prefers-reduced-motion: reduce)').matches;
   var mobile=window.matchMedia('(max-width:900px)').matches;
-    var nav=document.getElementById('nav');
+  try{history.scrollRestoration='manual'}catch(e){}
+  window.scrollTo(0,0);
+  var loaderEl=document.getElementById('loader'),revealed=false;
+  function reveal(){
+    if(revealed)return;revealed=true;
+    document.documentElement.classList.remove('loading');
+    loaderEl.classList.add('done');
+    window.scrollTo(0,0);
+    if(window.__lenis){window.__lenis.scrollTo(0,{immediate:true});window.__lenis.start()}
+    if(window.ScrollTrigger)ScrollTrigger.refresh();
+    setTimeout(function(){loaderEl.style.display='none'},900);
+  }
+  var nav=document.getElementById('nav');
   function navState(){nav.classList.toggle('solid',window.scrollY>40)}
   navState();window.addEventListener('scroll',navState,{passive:true});
   var cb=document.getElementById('callbar');
@@ -353,7 +378,7 @@ footer img{height:56px}
   });
 
   if(reduce||!window.gsap||!window.ScrollTrigger){
-    document.body.classList.add('static');
+    document.body.classList.add('static');reveal();
     document.querySelectorAll('.vwrap').forEach(function(w){w.style.background='url(media/poster.jpg) center/cover'});
     document.querySelectorAll('.reveal').forEach(function(el){el.style.opacity=1});
     return;
@@ -363,7 +388,7 @@ footer img{height:56px}
   // smooth (inertia) scrolling, synced with ScrollTrigger and the video scrub
   if(window.Lenis){
     var lenis=new Lenis({duration:1.25,easing:function(t){return Math.min(1,1.001-Math.pow(2,-10*t))},smoothWheel:true,wheelMultiplier:.9});
-    window.__lenis=lenis;
+    window.__lenis=lenis;lenis.stop();
     lenis.on('scroll',ScrollTrigger.update);
     gsap.ticker.add(function(t){lenis.raf(t*1000)});
     gsap.ticker.lagSmoothing(0);
@@ -377,9 +402,34 @@ footer img{height:56px}
   });
   gsap.to('#parallax',{yPercent:-8,ease:'none',scrollTrigger:{trigger:'#why',start:'top bottom',end:'bottom top',scrub:true}});
 
-  // scroll-scrubbed video (three exact segments, each starts on a keyframe)
-  var SEGS=[{src:'media/seg1.mp4',from:0,dur:13.2},{src:'media/seg2.mp4',from:13.2,dur:13.2},{src:'media/seg3.mp4',from:26.4,dur:13.7667}];
-  var TOTAL=40.1667;
+  // scroll-scrubbed video: pick the segment set, download it fully first (so seeking never waits on the network)
+  var SEGS=(mobile&&window.TRS.mobile)?window.TRS.mobile:window.TRS.desktop;
+  var TOTAL=window.TRS.total,blobs={};
+  var lfill=document.getElementById('lfill'),lpct=document.getElementById('lpct'),ltxt=document.getElementById('ltxt');
+  function preload(segs){
+    return new Promise(function(resolve){
+      var totalBytes=0,got=[],done=0,finished=false,ctrls=[],out={};
+      segs.forEach(function(sg){totalBytes+=sg.bytes||1;got.push(0)});
+      function report(){var n=0;got.forEach(function(x){n+=x});var p=Math.min(1,n/totalBytes);lfill.style.width=(p*100)+'%';lpct.textContent=Math.round(p*100)+'%'}
+      function finish(){if(finished)return;finished=true;clearTimeout(timer);resolve(out)}
+      var timer=setTimeout(function(){ltxt.textContent='Slow connection, starting anyway';ctrls.forEach(function(c){try{c.abort()}catch(e){}});finish()},90000);
+      function one(done1){if(++done===segs.length)finish()}
+      segs.forEach(function(sg,i){
+        var ctrl=window.AbortController?new AbortController():null;if(ctrl)ctrls.push(ctrl);
+        fetch(sg.src,ctrl?{signal:ctrl.signal}:{}).then(function(r){
+          if(!r.ok)throw new Error('http');
+          if(!r.body||!r.body.getReader){return r.blob().then(function(b){got[i]=sg.bytes||1;report();out[sg.src]=URL.createObjectURL(b);one()})}
+          var rd=r.body.getReader(),chunks=[];
+          return (function pump(){return rd.read().then(function(x){
+            if(x.done){out[sg.src]=URL.createObjectURL(new Blob(chunks,{type:'video/mp4'}));one();return}
+            chunks.push(x.value);got[i]+=x.value.length;report();return pump();
+          })})();
+        }).catch(function(){one()});
+      });
+    });
+  }
+  var ready=preload(SEGS);
+  ready.then(function(b){blobs=b;lfill.style.width='100%';lpct.textContent='100%'});
   function scrub(wrapId,stageId,t0,t1,fillId,pctId,eager){
     var wrap=document.getElementById(wrapId),stage=document.getElementById(stageId),sec=stage.parentElement;
     var scenes=[].slice.call(stage.querySelectorAll('.scene,.card')),target=0,cur=0,loaded=false,vids=[];
@@ -388,8 +438,8 @@ footer img{height:56px}
       var v=document.createElement('video');v.muted=true;v.playsInline=true;v.setAttribute('playsinline','');v.setAttribute('aria-hidden','true');v.tabIndex=-1;v.preload='none';v.poster='media/poster.jpg';
       wrap.appendChild(v);vids.push({el:v,sg:sg});
     });
-    function load(){if(loaded)return;loaded=true;vids.forEach(function(o){o.el.src=o.sg.src;o.el.preload='auto';o.el.load()})}
-    if(eager)load();else ScrollTrigger.create({trigger:sec,start:'top 250%',once:true,onEnter:load});
+    function load(){if(loaded)return;loaded=true;vids.forEach(function(o){o.el.src=blobs[o.sg.src]||o.sg.src;o.el.preload='auto';o.el.load()})}
+    ready.then(load);
     var fill=document.getElementById(fillId),pct=document.getElementById(pctId);
     function paintScenes(p){
       scenes.forEach(function(s){
@@ -421,7 +471,14 @@ footer img{height:56px}
   }
   scrub('v1','stage1',0,28.9,'fill1','pct',true);
   scrub('v2','stage2',28.9,TOTAL,'fill2','pct2',false);
+  ScrollTrigger.config({ignoreMobileResize:true});
+  ready.then(function(){
+    var first=document.querySelector('#v1 video');
+    if(first&&first.readyState<2){first.addEventListener('loadeddata',function(){setTimeout(reveal,150)},{once:true});setTimeout(reveal,2500)}
+    else setTimeout(reveal,150);
+  });
   window.addEventListener('load',function(){ScrollTrigger.refresh()});
+  if(document.fonts&&document.fonts.ready)document.fonts.ready.then(function(){ScrollTrigger.refresh()});
 })();
 </script>
 </body>

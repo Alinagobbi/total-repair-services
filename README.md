@@ -10,3 +10,7 @@ Cinematic scroll-video website for Total Repair Services.
 To preview locally, serve the folder with a server that supports range requests (for example `npx http-server`), because the video scrubbing needs them. Opening index.html straight from disk will not scrub the video.
 
 Still to do: connect the contact form to email or a CRM (it currently only shows the confirmation message).
+
+## Video files
+
+Desktop gets the 1920x1080 segments (`media/seg1-5.mp4`), phones get lighter 1280x720 ones (`media/mobile-seg1-5.mp4`). `js/segments.js` lists them. The page downloads every segment behind a loading screen before the scroll starts, so scrubbing never waits on the network.
