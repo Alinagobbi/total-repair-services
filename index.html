@@ -31,12 +31,19 @@ h1,h2,h3,.display{font-family:Anton,"Bebas Neue",Impact,"Arial Narrow",sans-seri
 html.loading,html.loading body{overflow:hidden}
 #loader{position:fixed;inset:0;z-index:500;background:var(--bg);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:22px;transition:opacity .7s ease,visibility 0s .7s}
 #loader.done{opacity:0;visibility:hidden;pointer-events:none}
-#loader img{width:min(260px,60vw);height:auto}
-#loader .lbar{width:min(300px,70vw);height:2px;background:rgba(255,255,255,.16);position:relative;overflow:hidden}
-#loader .lbar i{position:absolute;left:0;top:0;bottom:0;width:0;background:var(--accent);transition:width .25s ease}
+#loader .flood{position:relative;width:min(440px,72vw);aspect-ratio:769/378}
+#loader .flood .ghost,#loader .flood .wm{position:absolute;inset:0;width:100%;height:100%}
+#loader .flood .ghost{object-fit:contain;opacity:.13}
+#loader .flood .wm{-webkit-mask:url(img/logo.png) center/contain no-repeat;mask:url(img/logo.png) center/contain no-repeat;overflow:hidden}
+#loader .water{position:absolute;left:0;width:100%;height:100%;top:0;transform:translateY(112%);will-change:transform}
+#loader .water .body{position:absolute;left:0;right:0;top:0;bottom:-30%;background:linear-gradient(180deg,#fff 0%,#eceae5 100%)}
+#loader .water svg{position:absolute;left:0;top:-11px;width:200%;height:12px;display:block}
+#loader .water .w1{animation:wv 2.6s linear infinite}
+#loader .water .w2{top:-15px;opacity:.55;animation:wv 4.1s linear infinite reverse}
+@keyframes wv{from{transform:translateX(0)}to{transform:translateX(-50%)}}
 #loader .lmeta{display:flex;gap:14px;font-size:.68rem;letter-spacing:.22em;text-transform:uppercase;color:var(--mute)}
-#loader .lmeta b{color:var(--text);font-weight:600;min-width:3ch;text-align:right}
-
+#loader .lmeta b{color:var(--text);font-weight:600;min-width:3.4ch;text-align:right}
+@media (prefers-reduced-motion:reduce){#loader .water svg{animation:none!important}}
 /* NAV */
 nav{position:fixed;inset:0 0 auto 0;z-index:100;display:flex;align-items:center;justify-content:space-between;padding:14px clamp(18px,4vw,56px);transition:background .35s,backdrop-filter .35s,padding .35s}
 nav.solid{background:rgba(21,23,25,.94);backdrop-filter:blur(10px);padding-top:8px;padding-bottom:8px;border-bottom:1px solid var(--line)}
@@ -172,7 +179,7 @@ footer img{height:56px}
 </style>
 </head>
 <body>
-<div id="loader" role="status" aria-live="polite"><img src="img/logo.png" alt="Total Repair Services"><div class="lbar"><i id="lfill"></i></div><div class="lmeta"><span id="ltxt">Loading the experience</span><b id="lpct">0%</b></div></div>
+<div id="loader" role="status" aria-live="polite"><div class="flood"><img class="ghost" src="img/logo.png" alt="Total Repair Services"><div class="wm" aria-hidden="true"><div class="water" id="water"><svg class="w2" viewBox="0 0 200 12" preserveAspectRatio="none"><path d="M0 6 Q12.5 12 25 6 T50 6 T75 6 T100 6 T125 6 T150 6 T175 6 T200 6 V12 H0Z" fill="#fff"/></svg><svg class="w1" viewBox="0 0 200 12" preserveAspectRatio="none" aria-hidden="true"><path d="M0 6 Q12.5 0 25 6 T50 6 T75 6 T100 6 T125 6 T150 6 T175 6 T200 6 V12 H0Z" fill="#fff"/></svg><div class="body"></div></div></div></div><div class="lmeta"><span id="ltxt">Loading the experience</span><b id="lpct">0%</b></div></div>
 <a class="skip" href="#main">Skip to content</a>
 
 <nav id="nav" aria-label="Main">
@@ -405,12 +412,20 @@ footer img{height:56px}
   // scroll-scrubbed video: pick the segment set, download it fully first (so seeking never waits on the network)
   var SEGS=(mobile&&window.TRS.mobile)?window.TRS.mobile:window.TRS.desktop;
   var TOTAL=window.TRS.total,blobs={};
-  var lfill=document.getElementById('lfill'),lpct=document.getElementById('lpct'),ltxt=document.getElementById('ltxt');
+  var water=document.getElementById('water'),lpct=document.getElementById('lpct'),ltxt=document.getElementById('ltxt');
+  var want=0,shown=0;
+  (function flood(){
+    shown+=Math.max((want-shown)*.07,want>shown?.0015:0);if(shown>want)shown=want;
+    water.style.transform='translateY('+(112-shown*124)+'%)';
+    lpct.textContent=Math.round(shown*100)+'%';
+    if(!revealed)requestAnimationFrame(flood);
+  })();
+  function whenFilled(cb){(function chk(){if(shown>=.995){setTimeout(cb,650)}else requestAnimationFrame(chk)})()}
   function preload(segs){
     return new Promise(function(resolve){
       var totalBytes=0,got=[],done=0,finished=false,ctrls=[],out={};
       segs.forEach(function(sg){totalBytes+=sg.bytes||1;got.push(0)});
-      function report(){var n=0;got.forEach(function(x){n+=x});var p=Math.min(1,n/totalBytes);lfill.style.width=(p*100)+'%';lpct.textContent=Math.round(p*100)+'%'}
+      function report(){var n=0;got.forEach(function(x){n+=x});want=Math.min(.98,n/totalBytes)}
       function finish(){if(finished)return;finished=true;clearTimeout(timer);resolve(out)}
       var timer=setTimeout(function(){ltxt.textContent='Slow connection, starting anyway';ctrls.forEach(function(c){try{c.abort()}catch(e){}});finish()},90000);
       function one(done1){if(++done===segs.length)finish()}
@@ -429,7 +444,7 @@ footer img{height:56px}
     });
   }
   var ready=preload(SEGS);
-  ready.then(function(b){blobs=b;lfill.style.width='100%';lpct.textContent='100%'});
+  ready.then(function(b){blobs=b;want=1});
   function scrub(wrapId,stageId,t0,t1,fillId,pctId,eager){
     var wrap=document.getElementById(wrapId),stage=document.getElementById(stageId),sec=stage.parentElement;
     var scenes=[].slice.call(stage.querySelectorAll('.scene,.card')),target=0,cur=0,loaded=false,vids=[];
@@ -473,9 +488,9 @@ footer img{height:56px}
   scrub('v2','stage2',28.9,TOTAL,'fill2','pct2',false);
   ScrollTrigger.config({ignoreMobileResize:true});
   ready.then(function(){
-    var first=document.querySelector('#v1 video');
-    if(first&&first.readyState<2){first.addEventListener('loadeddata',function(){setTimeout(reveal,150)},{once:true});setTimeout(reveal,2500)}
-    else setTimeout(reveal,150);
+    var first=document.querySelector('#v1 video'),go=function(){whenFilled(reveal)};
+    if(first&&first.readyState<2){first.addEventListener('loadeddata',go,{once:true});setTimeout(go,2500)}
+    else go();
   });
   window.addEventListener('load',function(){ScrollTrigger.refresh()});
   if(document.fonts&&document.fonts.ready)document.fonts.ready.then(function(){ScrollTrigger.refresh()});
